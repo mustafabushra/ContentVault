@@ -38,18 +38,11 @@ export async function saveContent(item: Omit<SavedItem, 'id'>): Promise<string> 
 }
 
 export async function getUserItems(userId: string): Promise<SavedItem[]> {
-  try {
-    const q = query(collection(db, ITEMS), where('userId', '==', userId), orderBy('createdAt', 'desc'))
-    const snap = await getDocs(q)
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as SavedItem))
-  } catch {
-    // Fallback without orderBy if index not ready
-    const q = query(collection(db, ITEMS), where('userId', '==', userId))
-    const snap = await getDocs(q)
-    return snap.docs
-      .map(d => ({ id: d.id, ...d.data() } as SavedItem))
-      .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
-  }
+  const q = query(collection(db, ITEMS), where('userId', '==', userId))
+  const snap = await getDocs(q)
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as SavedItem))
+    .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
 }
 
 export async function getItemById(id: string): Promise<SavedItem | null> {
@@ -72,15 +65,9 @@ export async function updateItem(id: string, data: Partial<SavedItem>): Promise<
 
 // Collections
 export async function getUserCollections(userId: string): Promise<UserCollection[]> {
-  try {
-    const q = query(collection(db, COLS), where('userId', '==', userId), orderBy('createdAt', 'desc'))
-    const snap = await getDocs(q)
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserCollection))
-  } catch {
-    const q = query(collection(db, COLS), where('userId', '==', userId))
-    const snap = await getDocs(q)
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserCollection))
-  }
+  const q = query(collection(db, COLS), where('userId', '==', userId))
+  const snap = await getDocs(q)
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as UserCollection))
 }
 
 export async function createCollection(col: Omit<UserCollection, 'id'>): Promise<string> {
