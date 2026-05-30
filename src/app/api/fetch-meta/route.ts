@@ -1,42 +1,91 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-function detectPlatform(url: string): string {
-  if (url.includes('instagram.com')) return 'instagram'
-  if (url.includes('tiktok.com'))    return 'tiktok'
+function detectPlatform(url: string) {
+  if (url.includes('instagram.com'))                        return 'instagram'
+  if (url.includes('tiktok.com'))                          return 'tiktok'
   if (url.includes('twitter.com') || url.includes('x.com')) return 'twitter'
   if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube'
-  if (url.includes('linkedin.com')) return 'linkedin'
-  if (url.includes('facebook.com')) return 'facebook'
+  if (url.includes('linkedin.com'))                        return 'linkedin'
+  if (url.includes('facebook.com'))                        return 'facebook'
   return 'web'
 }
 
-function extractTitle(html: string, url: string): string {
-  const patterns = [
-    /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i,
-    /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i,
-    /<meta[^>]*name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i,
-    /<title[^>]*>([^<]+)<\/title>/i,
-  ]
-  for (const p of patterns) {
-    const m = html.match(p)
-    if (m?.[1]?.trim()) return m[1].trim()
+// oEmbed endpoints — free, no auth needed
+async function fetchOembed(url: string, platform: string) {
+  const endpoints: Record<string, string> = {
+    tiktok:  `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
+    youtube: `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
+    twitter: `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&omit_script=true`,
   }
-  // Fallback: use domain as title
-  try { return new URL(url).hostname.replace('www.', '') } catch { return url }
+
+  const endpoint = endpoints[platform]
+  if (!endpoint) return null
+
+  try {
+    const res = await fetch(endpoint, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
 }
 
-function extractMeta(html: string, prop: string): string {
-  const patterns = [
-    new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:${prop}["']`, 'i'),
-    new RegExp(`<meta[^>]*name=["'](twitter:)?${prop}["'][^>]*content=["']([^"']+)["']`, 'i'),
-  ]
-  for (const p of patterns) {
-    const m = html.match(p)
-    const val = m?.[1] || m?.[2]
-    if (val?.trim()) return val.trim()
+// YouTube — extract video ID and get description from page
+async function fetchYouTubeMeta(url: string) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' },
+      signal: AbortSignal.timeout(6000),
+    })
+    const html = await res.text()
+
+    const desc = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1]
+      ?.replace(/\\n/g, '\n').replace(/\\"/g, '"').substring(0, 500) ?? ''
+    const tags = [...html.matchAll(/"keywords":\[(.*?)\]/g)]
+      .map(m => m[1].replace(/"/g, '').split(',').slice(0, 5))[0] ?? []
+
+    return { description: desc, tags }
+  } catch {
+    return { description: '', tags: [] }
   }
-  return ''
+}
+
+// Generic page scraper for web URLs
+async function fetchWebMeta(url: string) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0', Accept: 'text/html' },
+      signal: AbortSignal.timeout(6000),
+    })
+    const html = await res.text()
+
+    const get = (prop: string) => {
+      const patterns = [
+        new RegExp(`<meta[^>]*property=["']og:${prop}["'][^>]*content=["']([^"']{1,500})["']`, 'i'),
+        new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*property=["']og:${prop}["']`, 'i'),
+        new RegExp(`<meta[^>]*name=["'](twitter:)?${prop}["'][^>]*content=["']([^"']{1,500})["']`, 'i'),
+      ]
+      for (const p of patterns) {
+        const m = html.match(p)
+        const v = m?.[1] ?? m?.[2]
+        if (v?.trim()) return v.trim()
+      }
+      return ''
+    }
+
+    const titleMatch = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i)
+
+    return {
+      title:       get('title') || titleMatch?.[1]?.trim() || '',
+      description: get('description'),
+      thumbnail:   get('image'),
+    }
+  } catch {
+    return { title: '', description: '', thumbnail: '' }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -45,66 +94,70 @@ export async function POST(req: NextRequest) {
 
   const platform = detectPlatform(url)
 
-  // For platforms that block scraping, return minimal data immediately
-  if (['instagram', 'tiktok', 'twitter'].includes(platform)) {
+  // ─── TikTok ───────────────────────────────────────────────
+  if (platform === 'tiktok') {
+    const oembed = await fetchOembed(url, 'tiktok')
     return NextResponse.json({
       url, platform,
-      title: getPlatformTitle(url, platform),
-      description: '',
-      thumbnail: '',
+      title:       oembed?.title ?? 'فيديو تيك توك',
+      description: oembed?.author_name ? `بواسطة @${oembed.author_name}` : '',
+      thumbnail:   oembed?.thumbnail_url ?? '',
+      author:      oembed?.author_name ?? '',
     })
   }
 
-  // Try to fetch metadata for other URLs
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 6000)
-
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ar,en;q=0.9',
-      },
-    })
-    clearTimeout(timeout)
-
-    const html = await res.text()
-    return NextResponse.json({
-      url,
-      platform,
-      title:       extractTitle(html, url),
-      description: extractMeta(html, 'description'),
-      thumbnail:   extractMeta(html, 'image'),
-    })
-  } catch {
-    // If fetch fails, return minimal data — save will still work
+  // ─── YouTube ──────────────────────────────────────────────
+  if (platform === 'youtube') {
+    const [oembed, extra] = await Promise.all([
+      fetchOembed(url, 'youtube'),
+      fetchYouTubeMeta(url),
+    ])
     return NextResponse.json({
       url, platform,
-      title:       getPlatformTitle(url, platform),
+      title:       oembed?.title ?? 'فيديو يوتيوب',
+      description: extra.description,
+      thumbnail:   oembed?.thumbnail_url ?? '',
+      author:      oembed?.author_name ?? '',
+      tags:        extra.tags,
+    })
+  }
+
+  // ─── Twitter/X ────────────────────────────────────────────
+  if (platform === 'twitter') {
+    const oembed = await fetchOembed(url, 'twitter')
+    // oembed.html contains the tweet text in HTML
+    const tweetText = oembed?.html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
+    const hashtags = [...tweetText.matchAll(/#(\w+)/g)].map(m => m[1])
+
+    return NextResponse.json({
+      url, platform,
+      title:       tweetText.substring(0, 120) || 'تغريدة',
+      description: tweetText,
+      thumbnail:   '',
+      author:      oembed?.author_name ?? '',
+      tags:        hashtags.slice(0, 5),
+    })
+  }
+
+  // ─── Instagram ────────────────────────────────────────────
+  if (platform === 'instagram') {
+    // Instagram blocks scraping — return minimal data
+    // User will fill description manually or via share sheet
+    return NextResponse.json({
+      url, platform,
+      title:       'منشور إنستقرام',
       description: '',
       thumbnail:   '',
+      needsManualDescription: true, // hint to UI
     })
   }
-}
 
-function getPlatformTitle(url: string, platform: string): string {
-  const labels: Record<string, string> = {
-    instagram: 'منشور إنستقرام',
-    tiktok:    'فيديو تيك توك',
-    twitter:   'تغريدة تويتر',
-    youtube:   'فيديو يوتيوب',
-    linkedin:  'منشور لينكدإن',
-    facebook:  'منشور فيسبوك',
-  }
-  // Try to extract video ID or username from URL for a better title
-  try {
-    const u = new URL(url)
-    const parts = u.pathname.split('/').filter(Boolean)
-    if (parts.length > 0) {
-      return `${labels[platform] || 'محتوى'} — ${parts[parts.length - 1].substring(0, 30)}`
-    }
-  } catch {}
-  return labels[platform] || 'محتوى محفوظ'
+  // ─── Web / LinkedIn / Facebook ────────────────────────────
+  const meta = await fetchWebMeta(url)
+  return NextResponse.json({
+    url, platform,
+    title:       meta.title || new URL(url).hostname,
+    description: meta.description,
+    thumbnail:   meta.thumbnail,
+  })
 }
