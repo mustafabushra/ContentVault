@@ -30,36 +30,54 @@ export default function SaveModal({ onClose, onSaved }: Props) {
   async function handleSaveUrl() {
     if (!url.trim() || !user) return
     setStep('fetching')
+
+    // Step 1: fetch metadata (non-blocking — continue even if fails)
+    let meta = { url, platform: 'web', title: '', description: '', thumbnail: '' }
     try {
-      const metaRes = await fetch('/api/fetch-meta', {
+      const res = await fetch('/api/fetch-meta', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       })
-      const meta = await metaRes.json()
-      setStep('analyzing')
+      if (res.ok) meta = { ...meta, ...(await res.json()) }
+    } catch { /* continue with fallback */ }
 
-      const aiRes = await fetch('/api/analyze', {
+    setStep('analyzing')
+
+    // Step 2: AI analysis (non-blocking — continue even if fails)
+    let analysis = { topic: '', hook: '', format: '', mood: '', tags: [] as string[], platform: meta.platform }
+    try {
+      const res = await fetch('/api/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: meta.url, title: meta.title, description: meta.description }),
+        body: JSON.stringify({ url: meta.url, title: meta.title || url, description: meta.description }),
       })
-      const analysis = await aiRes.json()
+      if (res.ok) analysis = { ...analysis, ...(await res.json()) }
+    } catch { /* save without AI analysis */ }
 
+    // Step 3: Save to Firestore — this MUST succeed
+    try {
       await saveContent({
         userId: user.uid,
-        url: meta.url || url,
+        url,
         title: meta.title || url,
         description: meta.description || '',
         thumbnail: meta.thumbnail || '',
         platform: (analysis.platform || meta.platform || 'web') as SavedItem['platform'],
         tags: analysis.tags || [],
         isFavorite: false,
-        analysis: { topic: analysis.topic || '', hook: analysis.hook || '', format: analysis.format || '', mood: analysis.mood || '' },
-        createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+        analysis: {
+          topic: analysis.topic || '',
+          hook: analysis.hook || '',
+          format: analysis.format || '',
+          mood: analysis.mood || '',
+        },
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
       })
       setStep('done')
       setTimeout(() => { onSaved(); onClose() }, 1600)
-    } catch {
-      setErrorMsg('تعذّر جلب الرابط. تحقق منه وحاول مجدداً.')
+    } catch (e) {
+      console.error('Save error:', e)
+      setErrorMsg('فشل الحفظ في قاعدة البيانات. تأكد من تسجيل الدخول.')
       setStep('error')
     }
   }
