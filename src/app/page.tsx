@@ -8,9 +8,7 @@ export default function Root() {
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading) {
-      router.replace(user ? '/home' : '/login')
-    }
+    if (!loading && user) router.replace('/home')
   }, [user, loading, router])
 
   return (
