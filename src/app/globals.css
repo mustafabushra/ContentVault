@@ -1,0 +1,43 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #FF7A00;
+  --accent-light: #FFF0E6;
+  --bg: #F5F5F7;
+  --surface: #FFFFFF;
+  --text-primary: #1A1A2E;
+  --text-secondary: #6B6B8A;
+  --border: #E8E8F0;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text-primary); font-family: var(--font-tajawal), sans-serif; direction: rtl; }
+
+.card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 50px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.chip-active { background: var(--accent); color: white; }
+.chip-inactive { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); }
+
+.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 40; }
+.sheet { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; background: var(--surface); border-radius: 24px 24px 0 0; z-index: 50; padding: 0 20px 40px; }
+.sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 20px; }
+
+/* Gradient backgrounds */
+.g1 { background: linear-gradient(135deg, #FF6B6B, #FF8E53); }
+.g2 { background: linear-gradient(135deg, #4ECDC4, #44A8B3); }
+.g3 { background: linear-gradient(135deg, #A8EDEA, #FED6E3); }
+.g4 { background: linear-gradient(135deg, #5B86E5, #36D1DC); }
+.g5 { background: linear-gradient(135deg, #F093FB, #F5576C); }
+.g6 { background: linear-gradient(135deg, #4FACFE, #00F2FE); }
+.g7 { background: linear-gradient(135deg, #43E97B, #38F9D7); }
+.g8 { background: linear-gradient(135deg, #FA709A, #FEE140); }
+
+/* Platform badges */
+.plat-instagram { background: linear-gradient(135deg, #833AB4, #FD1D1D, #FCB045); color: white; }
+.plat-tiktok { background: #010101; color: white; }
+.plat-twitter { background: #1DA1F2; color: white; }
+.plat-youtube { background: #FF0000; color: white; }
+.plat-web { background: #6B6B8A; color: white; }
